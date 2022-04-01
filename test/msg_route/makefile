@@ -1,22 +1,21 @@
 target = test
-objects = test_pthread_pool.o
+objects = test_msg_route.o
 
 CUR_DIR := $(shell pwd)
 
-$(warning "make test_pthread_pool")
+$(warning "make test log")
 $(warning "cur dir is $(CUR_DIR)")
 
 
 INCLUDE := -I $(CUR_DIR)
-INCLUDE += -I $(CUR_DIR)/../../framework/thread_pool/
+INCLUDE += -I $(CUR_DIR)/../../framework/msg_route/msg_route_comm/
+INCLUDE += -I $(CUR_DIR)/../../framework/msg_route/msg_route_client/
 CFLAGS += -g
-LDFLAGS += -L $(CUR_DIR)/../../framework/thread_pool/ -lmy_threadPool
-LDFLAGS += -Wl,-rpath=$(CUR_DIR)/../../framework/thread_pool/
-LDFLAGS += -L $(CUR_DIR)/../../framework/linked_list/ -llinked_list
-LDFLAGS += -Wl,-rpath=$(CUR_DIR)/../../framework/linked_list/
+#LDFLAGS += -lpthread
+LDFLAGS += -L $(CUR_DIR)/../../framework/msg_route/msg_route_client/ -lmsg_route_client
+LDFLAGS += -Wl,-rpath=$(CUR_DIR)/../../framework/msg_route/msg_route_client/
 #LDFLAGS += -L $(CUR_DIR)/../../opensource/cjson/lib/ -lcjson
 #LDFLAGS += -Wl,-rpath=$(CUR_DIR)/../../opensource/cjson/lib/
-LDFLAGS += -lpthread
 CFLAGS += $(INCLUDE)
 
 all: $(target) #make all或者make test都会执行7和9

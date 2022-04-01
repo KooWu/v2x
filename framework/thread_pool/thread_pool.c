@@ -1,11 +1,13 @@
 #include "thread_pool.h"
 #include <stdio.h>
 #include <stdint.h>
+#include <unistd.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <pthread.h>
 #include <semaphore.h>
 #include "my_log.h"
+#include "linked_list.h"
 
 #define THREAD_POOL_NUM_MAX 7
 
@@ -28,11 +30,11 @@ typedef struct {
 static bool g_isInit = false;
 static pthread_mutex_t g_initMutex = PTHREAD_MUTEX_INITIALIZER;
 static ThreadPoolInfo g_threadPoolInfo;
-static ThreadPoolJobNodeInfo g_jobListHead; 
+static DoublyLinkedListNode g_jobListHead; 
 
 static void ThreadPoolExitHandle(int32_t num)
 {
-	dbg("ThreadPoolExitHandle num: %d\n", num);
+    dbg("ThreadPoolExitHandle num: %d\n", num);
 	g_threadPoolInfo.isRunning = false;
 	int32_t idx;
 	for (idx = 0; idx < num; idx++) {
@@ -50,6 +52,7 @@ static void *PthreadPoolProcessThread(void *arg)
 {
 	dbg("thread run %ld\n", pthread_self());
 	ThreadPoolJobNodeInfo *cur = NULL;
+    DoublyLinkedListNode curHead; 
 	while (g_threadPoolInfo.isRunning) {
 		pthread_mutex_lock(&g_threadPoolInfo.lock);
 		if (g_threadPoolInfo.idleThreadNum != g_threadPoolInfo.maxThreadNum) {
@@ -58,21 +61,21 @@ static void *PthreadPoolProcessThread(void *arg)
 		pthread_mutex_unlock(&g_threadPoolInfo.lock);
 		dbg("thread wait %ld\n", pthread_self());
 		sem_wait(&g_threadPoolInfo.sem);
-		dbg("thread wake up %ld\n", pthread_self());
 		pthread_mutex_lock(&g_threadPoolInfo.lock);
+        dbg("thread wake up %ld\n", pthread_self());
 		g_threadPoolInfo.idleThreadNum--;
-		//
-		cur = g_jobListHead.prev;
-		if (cur == &g_jobListHead) {
+        int32_t ret = DeleteTailDoublyLinkedListNode(&g_jobListHead, &curHead);
+		if (ret != 0) {
 			pthread_mutex_unlock(&g_threadPoolInfo.lock);
 			continue;
 		}
-		cur->prev->next = &g_jobListHead;
-		g_jobListHead.prev = cur->prev;
 		g_threadPoolInfo.curJobNum--;
 		pthread_mutex_unlock(&g_threadPoolInfo.lock);
-		cur->jobInfo.jobFunc(cur->jobInfo.arg);
-		free(cur);
+        cur = (ThreadPoolJobNodeInfo *)curHead.nodeData;
+        if (cur != NULL) {
+            cur->jobInfo.jobFunc(cur->jobInfo.arg);
+		    free(curHead.nodeData);
+        }
 		dbg("thread %ld done job\n", pthread_self());
 	}
 	dbg("thread done %ld\n", pthread_self());
@@ -95,8 +98,7 @@ int32_t ThreadPoolInit(int32_t threadNum)
 
 	int32_t ret;
 	do {
-		g_jobListHead.prev = &g_jobListHead;
-		g_jobListHead.next = &g_jobListHead;
+        (void)InitDoublyLinkedListNode(&g_jobListHead);
 		g_threadPoolInfo.isRunning = true;
 		g_threadPoolInfo.curJobNum = 0;
 		g_threadPoolInfo.maxThreadNum = threadNum;
@@ -144,19 +146,9 @@ void ThreadPoolDeinit(void)
 	g_threadPoolInfo.curJobNum = 0;
 	g_threadPoolInfo.maxThreadNum = 0;
 	g_threadPoolInfo.idleThreadNum = 0;
-	ThreadPoolJobNodeInfo *cur = g_jobListHead.next;
-	ThreadPoolJobNodeInfo *tmp = NULL;
 	dbg("free list begin\n");
-	while (cur != &g_jobListHead) {
-		tmp = cur;
-		cur = cur->next;
-		free(tmp);
-	}
-	dbg("free list end\n");
-	g_jobListHead.prev = &g_jobListHead;
-	g_jobListHead.next = &g_jobListHead;
+	DeInitDoublyLinkedListNode(&g_jobListHead);
 	pthread_mutex_unlock(&g_initMutex);
-
 }
 
 int32_t ThreadPoolAddJob(ThreadPoolJobFunc jobFunc, void *arg)
@@ -183,13 +175,16 @@ int32_t ThreadPoolAddJob(ThreadPoolJobFunc jobFunc, void *arg)
 	}
 	tmp->jobInfo.jobFunc = jobFunc;
 	tmp->jobInfo.arg = arg;
+    DoublyLinkedListNode *node = CreateDoublyLinkedListNode(tmp);
+    if (node == NULL) {
+        dbg("CreateDoublyLinkedListNode failed\n");
+        free(tmp);
+        pthread_mutex_unlock(&g_initMutex);
+		return -1;
+    }
 	pthread_mutex_lock(&g_threadPoolInfo.lock);
 	dbg("threadPool status: curJobNum:%d, idleThreadNum: %d\n", g_threadPoolInfo.curJobNum, g_threadPoolInfo.idleThreadNum);
-	g_jobListHead.prev->next = tmp;
-	g_jobListHead.prev = tmp;
-	tmp->next = &g_jobListHead;
-	tmp->prev = g_jobListHead.prev;
-	
+	(void)InsertHeadDoublyLinkedListNode(&g_jobListHead, node);
 	g_threadPoolInfo.curJobNum++;
 	pthread_mutex_unlock(&g_threadPoolInfo.lock);
 	sem_post(&g_threadPoolInfo.sem);

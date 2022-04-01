@@ -6,8 +6,8 @@
 typedef void (*ThreadPoolJobFunc)(void *arg);
 
 typedef struct {
-	ThreadPoolJobFunc jobFunc;
-	void *arg;
+    ThreadPoolJobFunc jobFunc;
+    void *arg;
 } ThreadPoolJobInfo;
 
 int32_t ThreadPoolInit(int32_t threadNum);
